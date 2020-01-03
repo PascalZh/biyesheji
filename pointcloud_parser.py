@@ -6,6 +6,7 @@ from utils import *
 from _parser import lib, ffi
 
 vlp16_vert_angle = np.array([ -15, 1, -13, -3, -11, 5, -9, 7, -7, 9, -5, 11, -3, 13, -1, 15], dtype='float')
+rs_vert_angle = np.array([ -15, -13, -11, -9, -7, -5, -3, -1, +15, +13, +11, +9, +7, +5, +3, +1], dtype='float')
 
 np.set_printoptions(threshold=1e6)
 # number of points in a frame
@@ -41,11 +42,12 @@ interp_vlp = gen_interp(0.2)
 interp_rs = gen_interp(0.18)
 
 @record_run_time
-@jit
+@njit
 def interpolate_azimuth(data, lidar):
     '''interpolate azimuth
     '''
     if lidar == 0:
+        gap = 0.2
         data[:,2] += interp_vlp
     elif lidar == 1:
         gap = 0.18
@@ -86,12 +88,17 @@ def parse_packet(buf, lidar):
     return np.array([radius, intensity, azimuth]).transpose()
 
 @record_run_time
-def convert_pointcloud(data):
+def convert_pointcloud(data, lidar):
     '''get the point cloud, supposing x-axis is the north direction'''
     pointcloud = np.zeros((24*16, 4), dtype='float')
 
     alpha = pi/180.0*data[:,2]
-    omega = pi/180.0*np.tile(vlp16_vert_angle, 24)
+    if lidar == 0:
+        vert_angle = vlp16_vert_angle
+    elif lidar == 1:
+        vert_angle = rs_vert_angle
+    omega = pi/180.0*np.tile(vert_angle, 24)
+
     r = data[:,0]
     pointcloud[:,0] = r*cos(omega)*sin(alpha)
     pointcloud[:,1] = r*cos(omega)*cos(alpha)
@@ -110,7 +117,7 @@ def parse(buf, lidar):
     data = interpolate_azimuth(data, lidar)
 
     assert data.shape == (384, 3)
-    pc[ptr_end:ptr_end+384] = convert_pointcloud(data)
+    pc[ptr_end:ptr_end+384] = convert_pointcloud(data, lidar)
     ptr_end += 384
     if ptr_end > fpnum:
         ret = pc[0:fpnum].copy()
