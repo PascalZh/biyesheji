@@ -3,6 +3,7 @@ import time
 import os
 import pickle
 from contextlib import contextmanager
+from functools import reduce
 
 from numba import jit, njit, vectorize
 import numpy as np
@@ -86,6 +87,22 @@ def save_frame(x, i):
         os.makedirs("./serial/frames")
     np.save(filename + "/%s" % i, x)
 
+
+def save_folders(folder, subfolder, x):
+    """save x in folder/subfolder automatically named"""
+    filename = folder + '/' + subfolder
+    if not os.path.exists(filename):
+        os.makedirs(filename)
+    files = list(os.walk(filename))[0][2]
+    n = -1
+    if len(files) != 0:
+        n = reduce(max, [int(file_.split('.')[0]) for file_ in files])
+    np.save(filename + '/%05d.npy' % (n + 1), x)
+
+def load_folders(folder, subfolder):
+    filename = folder + '/' + subfolder
+    files = list(os.walk(filename))[0][2]
+    return [np.load(filename + '/' + f) for f in files]
 
 def print_hex(bytes):
     l = [hex(int(i)) for i in bytes]

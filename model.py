@@ -23,7 +23,7 @@ class PolynomialFit():
         loss = matmul(d.transpose(), d) / x.shape[0]
         return loss.reshape(1)
 
-    def predict(self, x, y):
+    def __call__(self, x, y):
         shape = x.shape
         x = x.reshape(-1,1)
         y = y.reshape(-1,1)
@@ -43,7 +43,7 @@ class MA():
         self.layer_size = layer_size
 
     @record_run_time
-    def conv1d(self, x):
+    def __call__(self, x):
         ret = x.reshape(-1).copy()
         for i in range(self.layer_size):
             ret = np.convolve(ret, self.kernel, 'same')
