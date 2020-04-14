@@ -104,8 +104,8 @@ def load_folders(folder, subfolder):
     files = list(os.walk(filename))[0][2]
     return [np.load(filename + '/' + f) for f in files]
 
-def print_hex(bytes):
-    l = [hex(int(i)) for i in bytes]
+def print_hex(bytes_):
+    l = [hex(int(i)) for i in bytes_]
     print(" ".join(l[:84]))
     for i in range(12):
         print(" ".join(l[84+i*100:84+i*100+100]))

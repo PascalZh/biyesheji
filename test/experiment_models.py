@@ -20,8 +20,8 @@ def plot2(x, y, y_hats, fmt1='b.', fmt2='g.'):
     plt.show()
 
 
-for xy in load_folders(filename, 'poly2_0'):
-    print(f"xy shape: {xy.shape}")
+for i, xy in enumerate(load_folders(filename, 'poly2_0')):
+    print(f"i:{i} ¦ xy shape: {xy.shape}")
 
     xy = xy[np.argsort(xy[:,0])]
 
@@ -30,9 +30,8 @@ for xy in load_folders(filename, 'poly2_0'):
 
     clustering = DBSCAN().fit(xy)
     labels = clustering.labels_
-    # plt.scatter(x, y, s=4, c=labels)
-
-    # plt.show()
+    plt.scatter(x, y, s=4, c=labels)
+    plt.show()
 
 
 # ma = model.MA(60, 1)
