@@ -1,44 +1,83 @@
 #!/usr/bin/env python3
 import argparse
-import pointcloud_parser
-from utils import *
-from model import *
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+            "-f",
+            "--pcap-file",
+            default="data/2019-07-15-10-23-00-RS-16-Data.pcap",
+            help="read from pcap file")
+
+    parser.add_argument(
+            "-r",
+            "--reset-frames",
+            action="store_true",
+            help="parse pcap only and serialize it, but do not analyze frames"
+            )
+    parser.add_argument(
+            "-s",
+            "--use-serialized-frame",
+            action="store_true",
+            help="use serialized frame instead of parsing the pcap"
+            )
+    parser.add_argument(
+            "-m",
+            "--mark-contour-data",
+            action="store_true",
+            help="mark contour data and serialize it"
+            )
+    parser.add_argument(
+            "--show-frame",
+            action="store_true",
+            help="show 3d scatter of a frame for every loop"
+            )
+
+    args = parser.parse_args()
 
 import cv2
 from cv2 import contourArea
 
-parser, args = None, None
+import pointcloud_parser
+from utils import *
+from model import *
+from detection import extract_patterns
 
-def filter_lim(p, xlim, ylim, zlim):
-    return p[(p[:,0] > xlim[0]) & (p[:,0] < xlim[1]) &
-            (p[:,1] > ylim[0]) & (p[:,1] < ylim[1]) &
-            (p[:,2] > zlim[0]) & (p[:,2] < zlim[1])]
+
+def filter_bound(p, xlim, ylim, zlim):
+    return p[(p[:, 0] > xlim[0]) & (p[:, 0] < xlim[1]) & (p[:, 1] > ylim[0]) &
+             (p[:, 1] < ylim[1]) & (p[:, 2] > zlim[0]) & (p[:, 2] < zlim[1])]
+
 
 @record_run_time
 def analyze_frame(frame):
 
     # filter frame
-    frame = filter_lim(frame,[-10.,6.],[-4.,5.],[-3.,3])
+    frame = filter_bound(frame, [-10., 6.], [-4., 5.], [-3., 3])
 
     # discretize the frame
     res_xy = 0.02
     res_z = 10
+
     def discretize(x, res):
         return ((x + res / 2) // res).astype(int)
 
     if args.show_frame:
         print("show_frame: number of points in frame is %s" % frame.shape[0])
         plot3d(frame)
+        plt.show()
 
     # get mn, mx to fix region of a image
     xy = frame.T[:2]
     xy = discretize(xy, res_xy)
     mn, mx = xy.min(axis=1), xy.max(axis=1)
-    images = split2d(frame, res_z)
+    images = slice_vertical(frame, res_z)
 
     # analyze image; get analysis results and show
-    l = [analyze_image(image, res_xy, mn, mx) + [image]
-            for image in images if len(image) > 0]
+    l = [
+        analyze_image(image, res_xy, mn, mx) + [image] for image in images
+        if len(image) > 0
+    ]
     imgrays, imcnts, contours_lst, images = tuple(map(list, zip(*l)))
 
     if args.mark_contour_data:
@@ -49,12 +88,12 @@ def analyze_frame(frame):
         else:
             cnt_saved = []
 
-        reg = explore_images((imgrays, imcnts, images), (0,0,1), 2, 2,
-                mn, mx, res_xy)
+        reg = explore_images((imgrays, imcnts, images), (0, 0, 1), 2, 2, mn,
+                             mx, res_xy)
         reg_d = discretize(reg, res_xy) - np.tile(mn, 2)
-        assert np.all(reg_d>= 0)
+        assert np.all(reg_d >= 0)
         for imcnt, contours in zip(imcnts, contours_lst):
-            imcnt_part = imcnt[reg_d[0]:reg_d[2],reg_d[1]:reg_d[3]]
+            imcnt_part = imcnt[reg_d[0]:reg_d[2], reg_d[1]:reg_d[3]]
             if len(imcnt_part) > 0:
                 fig = plt.figure()
                 ax = fig.add_subplot(111, aspect='equal')
@@ -67,24 +106,26 @@ def analyze_frame(frame):
                     y, x, h, w = cv2.boundingRect(cnt)
                     x -= reg_d[0]
                     y -= reg_d[1]
-                    return (w * h > 8 and
-                            any([reg_d[0] < p[0][1] < reg_d[2] and
-                                reg_d[1] < p[0][0] < reg_d[3] for p in cnt]))
-                contours_filtered = [cnt for cnt in contours if filter_contour(cnt)]
+                    return (w * h > 8 and any([
+                        reg_d[0] < p[0][1] < reg_d[2]
+                        and reg_d[1] < p[0][0] < reg_d[3] for p in cnt
+                    ]))
+
+                contours_filtered = [
+                    cnt for cnt in contours if filter_contour(cnt)
+                ]
 
                 for i, cnt in enumerate(contours_filtered):
                     y, x, h, w = cv2.boundingRect(cnt)
                     x -= reg_d[0]
                     y -= reg_d[1]
                     ax.add_patch(
-                            patches.Rectangle(
-                                (x-0.5, y-0.5),
-                                w,
-                                h,
-                                edgecolor='r',
-                                fill=None
-                                ))
-                    plt.text(x-0.5, y+h-0.5, f"{i}", color='b')
+                        patches.Rectangle((x - 0.5, y - 0.5),
+                                          w,
+                                          h,
+                                          edgecolor='r',
+                                          fill=None))
+                    plt.text(x - 0.5, y + h - 0.5, f"{i}", color='b')
 
                 c = contours_filtered
                 k = 230
@@ -109,37 +150,59 @@ def analyze_frame(frame):
     # plt.plot(x[order], model.conv1d(y[order]), 'ro', markersize=1)
 
     # if False:
-        # model = PolynomialFit(2)
-        # loss = model.train(x, y, z)
-        # print('loss: %s' % loss)
+    # model = PolynomialFit(2)
+    # loss = model.train(x, y, z)
+    # print('loss: %s' % loss)
 
-        # plt.xlim([-40, 40])
-        # plt.ylim([-40, 40])
-        # ax.scatter(x, y, z)
+    # plt.xlim([-40, 40])
+    # plt.ylim([-40, 40])
+    # ax.scatter(x, y, z)
 
-        # x_ = np.arange(-40, 40, 4)
-        # y_ = np.arange(-40, 40, 4)
-        # x_, y_ = np.meshgrid(x_, y_)
-        # z_ = model.predict(x_, y_)
-        # ax.plot_surface(x_, y_, z_, cmap=cm.coolwarm)
+    # x_ = np.arange(-40, 40, 4)
+    # y_ = np.arange(-40, 40, 4)
+    # x_, y_ = np.meshgrid(x_, y_)
+    # z_ = model.predict(x_, y_)
+    # ax.plot_surface(x_, y_, z_, cmap=cm.coolwarm)
+
 
 @record_run_time
-def split2d(f, resolution):
-    z, s = f[:,2], f.shape
+def slice_vertical(frame, resolution):
+    """Slice a 3d frame into 2d images vertically.
+    Args:
+        frame (np.array): its shape should be (n, 4), all columns are
+        respectively x, y, x, intensity.
+
+        resolution (float): the unit is meter.
+
+    Returns:
+        [np.array]: list of np.array of shape (k, 4), all k should add up to n.
+        Every element is a slice of frame, and are bounded by (z_max, z_min).
+    """
+    z, s = frame[:, 2], frame.shape
     z = ((z + resolution / 2) // resolution).astype(int)
     mn, mx = z.min(), z.max()
     sz = mx + 1 - mn
-    return [f[z - mn == i] for i in range(sz)]
+    return [frame[z - mn == i] for i in range(sz)]
+
 
 def gray2rgb(im):
+    """cv2 aided function"""
     return cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
+
+
 def gray2bgr(im):
+    """cv2 aided function"""
     return cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
+
+
 def bgr2rgb(im):
+    """cv2 aided function"""
     return cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+
 
 @record_run_time
 def analyze_image(img, resolution, mn=None, mx=None):
+    extract_patterns(img[:, [0, 1]])
     imgray, x, y = grid_image(img, resolution, mn, mx)
     #print(imgray.shape)
     #cv2.imshow('greyimage', imgray)
@@ -148,26 +211,37 @@ def analyze_image(img, resolution, mn=None, mx=None):
     imcnt = gray2bgr(thresh)
 
     contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE,
-            cv2.CHAIN_APPROX_NONE)
+                                           cv2.CHAIN_APPROX_NONE)
     contours = np.array(contours)
 
-    cv2.drawContours(imcnt, contours, -1, (0,255,0), 1)
+    cv2.drawContours(imcnt, contours, -1, (0, 255, 0), 1)
 
     return [imgray, bgr2rgb(imcnt), contours]
-    
+
+
 @record_run_time
 def grid_image(pcloud_np, resolution, mn=None, mx=None):
-    """pcloud_np.shape = (n, 4); mn.shape = (2, )"""
+    """Convert the point clouds into a image.
+    Args:
+        pcloud_np (np.array): shape should be (n, 4).
+        resolution (float): the unit is meter.
+        mn, mx (np.array): shape should be (2, )
+
+    Returns:
+        (np.array(dtype='uint8'), np.array, np.array): the first is the
+        gridded image; the second and the third are respectively x/y-axis
+        gridded coordinates."""
     xy = pcloud_np.T[:2]
     xy = ((xy + resolution / 2) // resolution).astype(int)
     if mn is None or mx is None:
         mn, mx = xy.min(axis=1), xy.max(axis=1)
     sz = mx + 1 - mn
-    flatidx = np.ravel_multi_index(xy-mn[:, None], sz)
+    flatidx = np.ravel_multi_index(xy - mn[:, None], sz)
     with recording("np.bincount"):
-        histo = np.bincount(flatidx, pcloud_np[:, 3],
-                sz.prod()) / np.maximum(1, np.bincount(flatidx, None, sz.prod()))
+        histo = np.bincount(flatidx, pcloud_np[:, 3], sz.prod()) / np.maximum(
+            1, np.bincount(flatidx, None, sz.prod()))
     return (histo.reshape(sz).astype('uint8'), *xy)
+
 
 def test():
     #with open('data/2015-07-23-14-37-22_Velodyne-VLP-16-Data_Downtown 10Hz Single.pcap', 'rb') as f:
@@ -195,46 +269,26 @@ def test():
 
             if frame is None:
                 continue
+            
+            if args.reset_frames:
+                save_frame(frame.astype('f4'), i)
+                i += 1
+                continue
+            analyze_frame(frame)
+            if args.mark_contour_data:
+                r = input('Continue?')
             else:
-                if args.reset_frames:
-                    save_frame(frame.astype('f4'), i)
-                    i += 1
-                    continue
-                analyze_frame(frame)
-                if args.mark_contour_data:
-                    r = input('Continue?')
-                else:
-                    r = 'y'
-                if r == 'y':
-                    i += 1
-                    continue
-                else:
-                    i += 1
-                    break
+                r = 'y'
+            if r == 'y':
+                i += 1
+                continue
+            else:
+                i += 1
+                break
 
     #process_image(images[4], test=True)
 
 
-parser = argparse.ArgumentParser()
-
-parser.add_argument("-f", "--pcap_file",
-        default="data/2019-07-15-10-23-00-RS-16-Data.pcap",
-        help="read from pcap file")
-
-parser.add_argument("-r", "--reset_frames",
-        action="store_true",
-        help="parse pcap only and serialize it, but do not analyze frames")
-parser.add_argument("-s", "--use_serialized_frame",
-        action="store_true",
-        help="use serialized frame instead of parsing the pcap")
-parser.add_argument("-m", "--mark_contour_data",
-        action="store_true",
-        help="mark contour data and serialize it")
-parser.add_argument("--show_frame",
-        action="store_true",
-        help="show 3d scatter of a frame")
-
-args = parser.parse_args()
-
-test()
-show_run_time()
+if __name__ == "__main__":
+    test()
+    show_run_time()

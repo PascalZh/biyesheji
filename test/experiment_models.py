@@ -12,6 +12,7 @@ from utils import save_folders, load_folders
 
 filename = "edge_detection_dataset"
 
+
 def plot2(x, y, y_hats, fmt1='b.', fmt2='g.'):
     for i in range(len(y_hats)):
         plt.subplot(1, len(y_hats), i+1)
@@ -23,10 +24,10 @@ def plot2(x, y, y_hats, fmt1='b.', fmt2='g.'):
 for i, xy in enumerate(load_folders(filename, 'poly2_0')):
     print(f"i:{i} ¦ xy shape: {xy.shape}")
 
-    xy = xy[np.argsort(xy[:,0])]
+    xy = xy[np.argsort(xy[:, 0])]
 
-    x = xy[:,0]
-    y = xy[:,1]
+    x = xy[:, 0]
+    y = xy[:, 1]
 
     clustering = DBSCAN().fit(xy)
     labels = clustering.labels_
@@ -41,4 +42,3 @@ for i, xy in enumerate(load_folders(filename, 'poly2_0')):
 # ma = model.MA(3, 100)
 # y_hats.append(ma(y))
 # plot2(x, y, y_hats)
-

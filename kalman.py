@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import matplotlib.pyplot as plt
 import numpy as np
 from numpy import dot
 from numpy.linalg import inv
-import matplotlib.pyplot as plt
+
 
 class KalmanFilter(object):
     def __init__(self, F, H, Q, R, B=None, P=None, x0=None):
@@ -25,13 +26,13 @@ class KalmanFilter(object):
         self.sigma10 = []
 
     def predict(self, u=0, Q=None):
-        self.Q = self.Q if Q == None else Q
-        
+        self.Q = self.Q if Q is None else Q
+
         self.x = dot(self.F, self.x) + dot(self.B, u)
         self.P = dot(dot(self.F, self.P), self.F.T) + self.Q
 
     def correct(self, z, R=None):
-        self.R = self.R if R == None else R
+        self.R = self.R if R is None else R
 
         residual = z - dot(self.H, self.x)
         S = dot(dot(self.H, self.P), self.H.T) + self.R
@@ -43,6 +44,7 @@ class KalmanFilter(object):
         self.sigma01.append(self.P[0][1])
         self.sigma11.append(self.P[1][1])
         self.sigma10.append(self.P[1][0])
+
 
 if __name__ == "__main__":
     dt = 1.0/60

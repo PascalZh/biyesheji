@@ -59,7 +59,9 @@ def enclosure_run_time():
 
     return record_run_time, recording, show_run_time
 
+
 record_run_time, recording, show_run_time = enclosure_run_time()
+
 
 def load_frame():
     filename = "./serial/frames"

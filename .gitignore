@@ -1,0 +1,9 @@
+/data
+/serial
+/__pycache__
+
+*.so
+*.c
+*.o
+*.npy
+*.npz

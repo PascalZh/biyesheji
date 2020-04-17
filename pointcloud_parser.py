@@ -72,15 +72,6 @@ def parse_packet(buf, lidar):
     elif lidar == 1:
         lib.parse_rs(buffer_in, radius, intensity, azimuth, 1248)
 
-    #start = time.time()
-    #span = time.time() - start
-    #name = 'test'
-    #if name not in run_time.keys():
-    #    run_time[name] = [span, 1]
-    #else:
-    #    run_time[name][0] += span
-    #    run_time[name][1] += 1
-
     radius = np.frombuffer(ffi.buffer(radius), dtype=dt)
     intensity =np.frombuffer(ffi.buffer(intensity), dtype=dt)
     azimuth =np.frombuffer(ffi.buffer(azimuth), dtype=dt)
@@ -112,6 +103,10 @@ ptr_end = 0
 
 @record_run_time
 def parse(buf, lidar):
+    """
+    buf:    content of a network frame
+    lidar:  0 for vlp16, 1 for rs lidar
+    """
     global fpnum, pc, ptr_end
     data = parse_packet(buf, lidar)
     data = interpolate_azimuth(data, lidar)
@@ -126,25 +121,25 @@ def parse(buf, lidar):
         return ret
     else:
         return None
-    #x = pc[:,0]
-    #y = pc[:,1]
-    #z = pc[:,2]
-    #s = pc[:,3]
-    #l = mlab.points3d(x, y, z, s, mode='point', colormap='cool', scale_factor=10.5)
+    x = pc[:,0]
+    y = pc[:,1]
+    z = pc[:,2]
+    s = pc[:,3]
+    l = mlab.points3d(x, y, z, s, mode='point', colormap='cool', scale_factor=10.5)
 
 
-    #@mlab.animate(delay=100)
-    #def anim():
-        #for i in range(100):
-            #l.mlab_source.x = pc_frames[i,:,0]
-            #l.mlab_source.y = pc_frames[i,:,1]
-            #l.mlab_source.z = pc_frames[i,:,2]
-            #l.mlab_source.scalars = pc_frames[i,:,3]
-            #yield
+    @mlab.animate(delay=100)
+    def anim():
+        for i in range(100):
+            l.mlab_source.x = pc_frames[i,:,0]
+            l.mlab_source.y = pc_frames[i,:,1]
+            l.mlab_source.z = pc_frames[i,:,2]
+            l.mlab_source.scalars = pc_frames[i,:,3]
+            yield
 
 
-    #anim()
-    #mlab.show()
+    anim()
+    mlab.show()
 
 def test():
     """Open vlp pcap file and print out the packets"""
@@ -152,7 +147,7 @@ def test():
         pcap = dpkt.pcap.Reader(f)
         for timestamp, buf in pcap:
             if len(buf) == 1248:
-                parse(buf)
+                parse(buf, 0)
 
     show_run_time()
 
