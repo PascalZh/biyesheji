@@ -1,6 +1,7 @@
 /data
 /serial
 /__pycache__
+/.vim
 
 *.so
 *.c

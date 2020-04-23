@@ -41,7 +41,7 @@ from cv2 import contourArea
 import pointcloud_parser
 from utils import *
 from model import *
-from detection import extract_patterns
+from tracking import extract_patterns, mtt
 
 
 def filter_bound(p, xlim, ylim, zlim):
@@ -168,11 +168,11 @@ def analyze_frame(frame):
 @record_run_time
 def slice_vertical(frame, resolution):
     """Slice a 3d frame into 2d images vertically.
-    Args:
-        frame (np.array): its shape should be (n, 4), all columns are
-        respectively x, y, x, intensity.
-
-        resolution (float): the unit is meter.
+    Parameters:
+        frame : array_like, shape should be (n, 4).
+            All columns are respectively x, y, x, intensity.
+        resolution : float
+            The unit is meter.
 
     Returns:
         [np.array]: list of np.array of shape (k, 4), all k should add up to n.
@@ -202,7 +202,7 @@ def bgr2rgb(im):
 
 @record_run_time
 def analyze_image(img, resolution, mn=None, mx=None):
-    extract_patterns(img[:, [0, 1]])
+    mtt.run(img[:, [0, 1]])
     imgray, x, y = grid_image(img, resolution, mn, mx)
     #print(imgray.shape)
     #cv2.imshow('greyimage', imgray)
