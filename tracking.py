@@ -40,8 +40,8 @@ class MTT(object):
         T : float
             Sampling period.
         F, H, Q, R : np.array
-            Parameters of kalman filter, all KalmanFilter objects will share the
-            same F, H, Q, R.
+            Parameters of kalman filter, all KalmanFilter objects will share
+            the same F, H, Q, R.
     """
 
     def __init__(self):
@@ -103,21 +103,24 @@ class MTT(object):
 
         return row_ind_, col_ind_
 
-    def maintain_track(self, row_ind, col_ind, x_m, y_m):
+    def maintain_track(self, row_ind, col_ind):
         """Confirm or delete tracks.
 
         Parameters:
             row_ind, col_ind : list of indices
                 Returns from `associate_track`.
-            x_m, y_m : list of float
-                Measurements of x and y.
-        """
 
-        # mark/delete the tracks that are not assigned with a observation.
+        Notes:
+            This function will change `self.tracks`, so all indices will be
+            invalid after calling it.
+        """
+        for i, track in enumerate(self.tracks):
+            track.mark_whether_assigned(assigned=i in row_ind)
+
+        self.tracks = list(filter(lambda t: not t.deleted, self.tracks))
 
     def run(self, img):
         """
-
         Parameters:
             img : array(shape=(n, 2))
                 points in the form of (x, y)
@@ -149,7 +152,7 @@ class MTT(object):
             for i, j in zip(row_ind, col_ind):
                 self.tracks[i].correct(x_m[j], y_m[j])
 
-            self.maintain_track(row_ind, col_ind, x_m, y_m)
+            self.maintain_track(row_ind, col_ind)
 
             # add(initialize) the tracks if any observations(measurements) are
             # not assigned with a tracks.
@@ -164,11 +167,24 @@ class MTT(object):
 
 class Track(object):
     """2-D Track.
+
+    Attributes:
+        kf_x, kf_y : KalmanFilter
+            We use two KalmanFilter objects to represent a track.
+        deleted : bool (default=False)
+            Used to mark the track's status, since Track is not able to delete
+            itself. Only `mark_whether_assigned` will change it.
+        mn_ad_hoc_rule, m, n : list of int, int, int
+            Used to implement M/N ad hoc rule.
     """
 
     def __init__(self, kf_x, kf_y):
         self.kf_x = kf_x
         self.kf_y = kf_y
+        self.deleted = False
+        self.mn_ad_hoc_rule = []
+        self.m = 5
+        self.n = 2
 
     def predict(self):
         self.kf_x.predict()
@@ -177,6 +193,13 @@ class Track(object):
     def correct(self, x, y):
         self.kf_x.correct(x)
         self.kf_y.correct(y)
+
+    def mark_whether_assigned(self, assigned):
+        r = self.mn_ad_hoc_rule
+        r.append(0 if assigned else 1)
+        if len(r) > self.m:
+            r.pop()
+        self.deleted = True if sum(r) >= self.n else False
 
     @property
     def x(self):
