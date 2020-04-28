@@ -1,16 +1,10 @@
-import dpkt
 import time
 import os
-import pickle
 from contextlib import contextmanager
 from functools import reduce
 
-from numba import jit, njit, vectorize
 import numpy as np
-from numpy import array
-from numpy import linalg, matmul, sin, cos, pi
 
-#from mayavi import mlab
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.widgets import Button, TextBox, RectangleSelector

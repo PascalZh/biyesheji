@@ -3,6 +3,12 @@
 """Detection Module.
 Including point cloud processing functions, pattern extraction functions, and
 others.
+
+Notes:
+    Here are some naming conventions in this code to keep simplicity.
+    x_: a priori prediction of x.
+    x: measurement of x(observation), but in KalmanFilter x's meaning is
+    determined by the computing process.
 """
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -165,6 +171,28 @@ class MTT(object):
                 self.tracks.append(track)
 
 
+class Hist(object):
+    __slots__ = (
+            'x_', 'vx_', 'x', 'Px_',
+            'y_', 'vy_', 'y', 'Py_'
+            )
+
+    def __init__(self, x_=None, vx_=None, x=None, Px_=None,
+                 y_=None, vy_=None, y=None, Py_=None):
+        self.x_ = x_
+        """prediction of x"""
+        self.vx_ = vx_
+        """prediction of velocity of x"""
+        self.x = x
+        """measurement of x, could be `None`. If it is the case, `correct` is
+        not performed due to failing matching any obeservations."""
+        self.y_ = y_
+        self.vy_ = vy_
+        self.y = y
+        self.Px_ = Px_
+        self.Py_ = Py_
+
+
 class Track(object):
     """2-D Track.
 
@@ -176,6 +204,8 @@ class Track(object):
             itself. Only `mark_whether_assigned` will change it.
         mn_ad_hoc_rule, m, n : list of int, int, int
             Used to implement M/N ad hoc rule.
+        hists : list of Hist.
+            See class Hist.
     """
 
     def __init__(self, kf_x, kf_y):
@@ -185,14 +215,22 @@ class Track(object):
         self.mn_ad_hoc_rule = []
         self.m = 5
         self.n = 2
+        self.hist = []
 
     def predict(self):
-        self.kf_x.predict()
-        self.kf_y.predict()
+        kf_x = self.kf_x
+        kf_y = self.kf_y
+        kf_x.predict()
+        kf_y.predict()
+        hist = Hist(x_=kf_x.x[0][0], vx_=kf_x.x[1][0], Px_=kf_x.P.copy(),
+                    y_=kf_y.x[0][0], vy_=kf_y.x[1][0], Py_=kf_y.P.copy())
+        self.hists.append(hist)
 
     def correct(self, x, y):
         self.kf_x.correct(x)
         self.kf_y.correct(y)
+        self.hists[-1].x = x
+        self.hists[-1].y = y
 
     def mark_whether_assigned(self, assigned):
         r = self.mn_ad_hoc_rule

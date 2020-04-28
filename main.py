@@ -2,7 +2,6 @@
 import argparse
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
     parser.add_argument(
             "-f",
             "--pcap-file",
@@ -32,16 +31,20 @@ if __name__ == "__main__":
             action="store_true",
             help="show 3d scatter of a frame for every loop"
             )
-
     args = parser.parse_args()
 
+import dpkt
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
 import cv2
-from cv2 import contourArea
+import os
+import pickle
 
 import pointcloud_parser
-from utils import *
-from model import *
-from tracking import extract_patterns, mtt
+from utils import record_run_time, recording, show_run_time, save_frame,\
+        load_frame, plot3d, explore_images, my_imshow
+from tracking import mtt
 
 
 def filter_bound(p, xlim, ylim, zlim):
@@ -50,7 +53,34 @@ def filter_bound(p, xlim, ylim, zlim):
 
 
 @record_run_time
-def analyze_frame(frame):
+def grid_image(pointcloud, resolution, mn=None, mx=None):
+    """Convert the point clouds into a image.
+
+    Parameters:
+        pointcloud : np.array(shape=(n, 4))
+        resolution : float
+            The unit is meter.
+        mn, mx : np.array(shape=(2,))
+            The bound of point cloud.
+
+    Returns:
+        (np.array(dtype='uint8'), np.array, np.array): the first is the
+        gridded image; the second and the third are respectively x/y-axis
+        gridded coordinates."""
+    xy = pointcloud.T[:2]
+    xy = ((xy + resolution / 2) // resolution).astype(int)
+    if mn is None or mx is None:
+        mn, mx = xy.min(axis=1), xy.max(axis=1)
+    sz = mx + 1 - mn
+    flatidx = np.ravel_multi_index(xy - mn[:, None], sz)
+    with recording("np.bincount"):
+        histo = np.bincount(flatidx, pointcloud[:, 3], sz.prod()) / np.maximum(
+            1, np.bincount(flatidx, None, sz.prod()))
+    return (histo.reshape(sz).astype('uint8'), *xy)
+
+
+@record_run_time
+def analyze_frame(frame, args):
 
     # filter frame
     frame = filter_bound(frame, [-10., 6.], [-4., 5.], [-3., 3])
@@ -74,11 +104,11 @@ def analyze_frame(frame):
     images = slice_vertical(frame, res_z)
 
     # analyze image; get analysis results and show
-    l = [
+    lst = [
         analyze_image(image, res_xy, mn, mx) + [image] for image in images
         if len(image) > 0
     ]
-    imgrays, imcnts, contours_lst, images = tuple(map(list, zip(*l)))
+    imgrays, imcnts, contours_lst, images = tuple(map(list, zip(*lst)))
 
     if args.mark_contour_data:
         f_name = "./serial/contours.p"
@@ -120,16 +150,20 @@ def analyze_frame(frame):
                     x -= reg_d[0]
                     y -= reg_d[1]
                     ax.add_patch(
-                        patches.Rectangle((x - 0.5, y - 0.5),
-                                          w,
-                                          h,
-                                          edgecolor='r',
-                                          fill=None))
+                        patches.Rectangle(
+                            (x - 0.5, y - 0.5),
+                            w,
+                            h,
+                            edgecolor='r',
+                            fill=None
+                            ))
                     plt.text(x - 0.5, y + h - 0.5, f"{i}", color='b')
 
                 c = contours_filtered
                 k = 230
-                #[print(f"distance({k}, {i}): {cv2.matchShapes(c[k], c[i], 3, 0.)}") for i in range(len(c))]
+                for i in range(len(c)):
+                    print(f"distance({k}, {i}): "
+                          f"{cv2.matchShapes(c[k], c[i], 3, 0.)}")
 
                 my_imshow(imcnt_part)
                 plt.show()
@@ -168,8 +202,9 @@ def analyze_frame(frame):
 @record_run_time
 def slice_vertical(frame, resolution):
     """Slice a 3d frame into 2d images vertically.
+
     Parameters:
-        frame : array_like, shape should be (n, 4).
+        frame : np.array(shape=(n, 4))
             All columns are respectively x, y, x, intensity.
         resolution : float
             The unit is meter.
@@ -178,7 +213,7 @@ def slice_vertical(frame, resolution):
         [np.array]: list of np.array of shape (k, 4), all k should add up to n.
         Every element is a slice of frame, and are bounded by (z_max, z_min).
     """
-    z, s = frame[:, 2], frame.shape
+    z = frame[:, 2]
     z = ((z + resolution / 2) // resolution).astype(int)
     mn, mx = z.min(), z.max()
     sz = mx + 1 - mn
@@ -204,9 +239,9 @@ def bgr2rgb(im):
 def analyze_image(img, resolution, mn=None, mx=None):
     mtt.run(img[:, [0, 1]])
     imgray, x, y = grid_image(img, resolution, mn, mx)
-    #print(imgray.shape)
-    #cv2.imshow('greyimage', imgray)
-    #cv2.waitKey()
+    # print(imgray.shape)
+    # cv2.imshow('greyimage', imgray)
+    # cv2.waitKey()
     ret, thresh = cv2.threshold(imgray, 1, 255, cv2.THRESH_BINARY)
     imcnt = gray2bgr(thresh)
 
@@ -219,35 +254,10 @@ def analyze_image(img, resolution, mn=None, mx=None):
     return [imgray, bgr2rgb(imcnt), contours]
 
 
-@record_run_time
-def grid_image(pcloud_np, resolution, mn=None, mx=None):
-    """Convert the point clouds into a image.
-    Args:
-        pcloud_np (np.array): shape should be (n, 4).
-        resolution (float): the unit is meter.
-        mn, mx (np.array): shape should be (2, )
-
-    Returns:
-        (np.array(dtype='uint8'), np.array, np.array): the first is the
-        gridded image; the second and the third are respectively x/y-axis
-        gridded coordinates."""
-    xy = pcloud_np.T[:2]
-    xy = ((xy + resolution / 2) // resolution).astype(int)
-    if mn is None or mx is None:
-        mn, mx = xy.min(axis=1), xy.max(axis=1)
-    sz = mx + 1 - mn
-    flatidx = np.ravel_multi_index(xy - mn[:, None], sz)
-    with recording("np.bincount"):
-        histo = np.bincount(flatidx, pcloud_np[:, 3], sz.prod()) / np.maximum(
-            1, np.bincount(flatidx, None, sz.prod()))
-    return (histo.reshape(sz).astype('uint8'), *xy)
-
-
-def test():
-    #with open('data/2015-07-23-14-37-22_Velodyne-VLP-16-Data_Downtown 10Hz Single.pcap', 'rb') as f:
+def test(args):
     if args.use_serialized_frame:
         for frame in load_frame():
-            analyze_frame(frame)
+            analyze_frame(frame, args)
             if args.mark_contour_data:
                 r = input('Continue?')
             else:
@@ -269,12 +279,12 @@ def test():
 
             if frame is None:
                 continue
-            
+
             if args.reset_frames:
                 save_frame(frame.astype('f4'), i)
                 i += 1
                 continue
-            analyze_frame(frame)
+            analyze_frame(frame, args)
             if args.mark_contour_data:
                 r = input('Continue?')
             else:
@@ -286,9 +296,7 @@ def test():
                 i += 1
                 break
 
-    #process_image(images[4], test=True)
-
 
 if __name__ == "__main__":
-    test()
+    test(args)
     show_run_time()

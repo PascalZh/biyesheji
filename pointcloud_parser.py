@@ -1,12 +1,19 @@
 #! /usr/bin/env python3
 
-from matplotlib.widgets import Button, TextBox
-
-from utils import *
+from utils import record_run_time, show_run_time
+import numpy as np
+import dpkt
+from numpy import cos, sin, pi
+from numba import njit, jit
+from mayavi import mlab
 from _parser import lib, ffi
 
-vlp16_vert_angle = np.array([ -15, 1, -13, -3, -11, 5, -9, 7, -7, 9, -5, 11, -3, 13, -1, 15], dtype='float')
-rs_vert_angle = np.array([ -15, -13, -11, -9, -7, -5, -3, -1, +15, +13, +11, +9, +7, +5, +3, +1], dtype='float')
+vlp16_vert_angle = np.array([
+    -15, 1, -13, -3, -11, 5, -9, 7, -7, 9, -5, 11, -3, 13, -1, 15
+    ], dtype='float')
+rs_vert_angle = np.array([
+    -15, -13, -11, -9, -7, -5, -3, -1, +15, +13, +11, +9, +7, +5, +3, +1
+    ], dtype='float')
 
 np.set_printoptions(threshold=1e6)
 # number of points in a frame
@@ -22,7 +29,8 @@ def gen_interp(gap):
             if k < 16:
                 interp[32*i+k+1] = interp[16*2*i]+(gap*2.304*(k+1))/55.296
             else:
-                interp[32*i+k+1] = interp[16*2*i]+(gap*2.304*((k-15)+55.296))/(2*55.296)
+                interp[32*i+k+1] = interp[16*2*i] +\
+                                   (gap*2.304*((k-15)+55.296))/(2*55.296)
     return interp
 
 
@@ -34,12 +42,13 @@ def calc_fpnum(azimuths):
             break
     c = inds[:i]
     ret = c[np.argsort(c)[2]]
-    #print(azimuths[0:ret])
+    # print(azimuths[0:ret])
     return ret
 
 
 interp_vlp = gen_interp(0.2)
 interp_rs = gen_interp(0.18)
+
 
 @record_run_time
 @njit
@@ -48,10 +57,10 @@ def interpolate_azimuth(data, lidar):
     '''
     if lidar == 0:
         gap = 0.2
-        data[:,2] += interp_vlp
+        data[:, 2] += interp_vlp
     elif lidar == 1:
         gap = 0.18
-        data[:,2] += interp_rs
+        data[:, 2] += interp_rs
     for i in range(12):
         for j in range(16):
             data[16*2*i+j][2] = data[32*i][2]
@@ -73,39 +82,44 @@ def parse_packet(buf, lidar):
         lib.parse_rs(buffer_in, radius, intensity, azimuth, 1248)
 
     radius = np.frombuffer(ffi.buffer(radius), dtype=dt)
-    intensity =np.frombuffer(ffi.buffer(intensity), dtype=dt)
-    azimuth =np.frombuffer(ffi.buffer(azimuth), dtype=dt)
+    intensity = np.frombuffer(ffi.buffer(intensity), dtype=dt)
+    azimuth = np.frombuffer(ffi.buffer(azimuth), dtype=dt)
 
     return np.array([radius, intensity, azimuth]).transpose()
+
 
 @record_run_time
 def convert_pointcloud(data, lidar):
     '''get the point cloud, supposing x-axis is the north direction'''
     pointcloud = np.zeros((24*16, 4), dtype='float')
 
-    alpha = pi/180.0*data[:,2]
+    alpha = pi / 180.0 * data[:, 2]
     if lidar == 0:
         vert_angle = vlp16_vert_angle
     elif lidar == 1:
         vert_angle = rs_vert_angle
-    omega = pi/180.0*np.tile(vert_angle, 24)
+    omega = pi / 180.0 * np.tile(vert_angle, 24)
 
-    r = data[:,0]
-    pointcloud[:,0] = r*cos(omega)*sin(alpha)
-    pointcloud[:,1] = r*cos(omega)*cos(alpha)
-    pointcloud[:,2] = r*sin(omega)
-    pointcloud[:,3] = data[:,1]
+    r = data[:, 0]
+    pointcloud[:, 0] = r * cos(omega) * sin(alpha)
+    pointcloud[:, 1] = r * cos(omega) * cos(alpha)
+    pointcloud[:, 2] = r * sin(omega)
+    pointcloud[:, 3] = data[:, 1]
     return pointcloud
 
 
 pc = np.zeros((fpnum*2, 4), dtype='float')
 ptr_end = 0
 
+
 @record_run_time
 def parse(buf, lidar):
     """
-    buf:    content of a network frame
-    lidar:  0 for vlp16, 1 for rs lidar
+    Parameters:
+        buf : buffer
+            content of a network frame
+        lidar: int
+            0 for vlp16, 1 for rs lidar
     """
     global fpnum, pc, ptr_end
     data = parse_packet(buf, lidar)
@@ -121,35 +135,37 @@ def parse(buf, lidar):
         return ret
     else:
         return None
-    x = pc[:,0]
-    y = pc[:,1]
-    z = pc[:,2]
-    s = pc[:,3]
-    l = mlab.points3d(x, y, z, s, mode='point', colormap='cool', scale_factor=10.5)
+    # x = pc[:, 0]
+    # y = pc[:, 1]
+    # z = pc[:, 2]
+    # s = pc[:, 3]
+    # l = mlab.points3d(x, y, z, s, mode='point', colormap='cool',
+                      # scale_factor=10.5)
+
+    # @mlab.animate(delay=100)
+    # def anim():
+        # for i in range(100):
+            # l.mlab_source.x = pc_frames[i,:,0]
+            # l.mlab_source.y = pc_frames[i,:,1]
+            # l.mlab_source.z = pc_frames[i,:,2]
+            # l.mlab_source.scalars = pc_frames[i,:,3]
+            # yield
 
 
-    @mlab.animate(delay=100)
-    def anim():
-        for i in range(100):
-            l.mlab_source.x = pc_frames[i,:,0]
-            l.mlab_source.y = pc_frames[i,:,1]
-            l.mlab_source.z = pc_frames[i,:,2]
-            l.mlab_source.scalars = pc_frames[i,:,3]
-            yield
-
-
-    anim()
-    mlab.show()
+    # anim()
+    # mlab.show()
 
 def test():
     """Open vlp pcap file and print out the packets"""
-    with open('data/2015-07-23-14-37-22_Velodyne-VLP-16-Data_Downtown 10Hz Single.pcap', 'rb') as f:
+    with open('data/2015-07-23-14-37-22_'
+              'Velodyne-VLP-16-Data_Downtown 10Hz Single.pcap', 'rb') as f:
         pcap = dpkt.pcap.Reader(f)
         for timestamp, buf in pcap:
             if len(buf) == 1248:
                 parse(buf, 0)
 
     show_run_time()
+
 
 if __name__ == '__main__':
     test()
