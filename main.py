@@ -44,7 +44,9 @@ import pickle
 import pointcloud_parser
 from utils import record_run_time, recording, show_run_time, save_frame,\
         load_frame, plot3d, explore_images, my_imshow
-from tracking import mtt
+from tracking import MTT, BBox
+from sklearn.cluster import DBSCAN, KMeans
+mtt = MTT()
 
 
 def filter_bound(p, xlim, ylim, zlim):
@@ -53,15 +55,15 @@ def filter_bound(p, xlim, ylim, zlim):
 
 
 @record_run_time
-def grid_image(pointcloud, resolution, mn=None, mx=None):
+def grid_image(pointcloud, resolution, bbox):
     """Convert the point clouds into a image.
 
     Parameters:
         pointcloud : np.array(shape=(n, 4))
         resolution : float
             The unit is meter.
-        mn, mx : np.array(shape=(2,))
-            The bound of point cloud.
+        bbox : BBox
+            The bounding box of point cloud.
 
     Returns:
         (np.array(dtype='uint8'), np.array, np.array): the first is the
@@ -69,10 +71,9 @@ def grid_image(pointcloud, resolution, mn=None, mx=None):
         gridded coordinates."""
     xy = pointcloud.T[:2]
     xy = ((xy + resolution / 2) // resolution).astype(int)
-    if mn is None or mx is None:
-        mn, mx = xy.min(axis=1), xy.max(axis=1)
-    sz = mx + 1 - mn
-    flatidx = np.ravel_multi_index(xy - mn[:, None], sz)
+    bbox = BBox(xy.min(axis=1), xy.max(axis=1)) if bbox.is_none() else bbox
+    sz = bbox.mx + 1 - bbox.mn
+    flatidx = np.ravel_multi_index(xy - bbox.mn[:, None], sz)
     with recording("np.bincount"):
         histo = np.bincount(flatidx, pointcloud[:, 3], sz.prod()) / np.maximum(
             1, np.bincount(flatidx, None, sz.prod()))
@@ -97,15 +98,15 @@ def analyze_frame(frame, args):
         plot3d(frame)
         plt.show()
 
-    # get mn, mx to fix region of a image
+    # get bounding box to fix region of a image
     xy = frame.T[:2]
     xy = discretize(xy, res_xy)
-    mn, mx = xy.min(axis=1), xy.max(axis=1)
+    bbox = BBox(xy.min(axis=1), xy.max(axis=1))
     images = slice_vertical(frame, res_z)
 
     # analyze image; get analysis results and show
     lst = [
-        analyze_image(image, res_xy, mn, mx) + [image] for image in images
+        analyze_image(image, res_xy, bbox) + [image] for image in images
         if len(image) > 0
     ]
     imgrays, imcnts, contours_lst, images = tuple(map(list, zip(*lst)))
@@ -118,9 +119,12 @@ def analyze_frame(frame, args):
         else:
             cnt_saved = []
 
-        reg = explore_images((imgrays, imcnts, images), (0, 0, 1), 2, 2, mn,
-                             mx, res_xy)
-        reg_d = discretize(reg, res_xy) - np.tile(mn, 2)
+        reg = explore_images((imgrays, imcnts, images),
+                             (0, 0, 1),
+                             2, 2,
+                             bbox.mn, bbox.mx,
+                             res_xy)
+        reg_d = discretize(reg, res_xy) - np.tile(bbox.mn, 2)
         assert np.all(reg_d >= 0)
         for imcnt, contours in zip(imcnts, contours_lst):
             imcnt_part = imcnt[reg_d[0]:reg_d[2], reg_d[1]:reg_d[3]]
@@ -174,7 +178,7 @@ def analyze_frame(frame, args):
 
     # x =  img[:,0]; y = img[:,1]; z = img[:,2]
     # pitch = img[:,3]  # reflexity of laser
-    # plt.subplot(1, 1, 1)
+    plt.subplot(1, 1, 1)
     # plt.xlabel('x')
     # plt.ylabel('y')
     # plt.plot(x, y, 'go', markersize=2)
@@ -210,7 +214,7 @@ def slice_vertical(frame, resolution):
             The unit is meter.
 
     Returns:
-        [np.array]: list of np.array of shape (k, 4), all k should add up to n.
+        [np.array] : list of np.array of shape (k, 4).
         Every element is a slice of frame, and are bounded by (z_max, z_min).
     """
     z = frame[:, 2]
@@ -236,9 +240,9 @@ def bgr2rgb(im):
 
 
 @record_run_time
-def analyze_image(img, resolution, mn=None, mx=None):
+def analyze_image(img, resolution, bbox=BBox()):
     mtt.run(img[:, [0, 1]])
-    imgray, x, y = grid_image(img, resolution, mn, mx)
+    imgray, x, y = grid_image(img, resolution, bbox)
     # print(imgray.shape)
     # cv2.imshow('greyimage', imgray)
     # cv2.waitKey()
@@ -255,6 +259,62 @@ def analyze_image(img, resolution, mn=None, mx=None):
 
 
 def test(args):
+    parser = pointcloud_parser.Parser('rs', args.pcap_file)
+
+    # frame = next(parser.generator())
+    # frame = filter_bound(frame, [-10., 6.], [-4., 5.], [-3., 3])
+    # frame = frame[:, [0, 1]]
+    # x, y = frame[:, 0], frame[:, 1]
+
+    # def dbscan_for_4_eps(epss):
+        # for i, eps in enumerate(epss):
+            # l_ = DBSCAN(eps=eps).fit(frame).labels_
+            # plt.subplot(2, 2, i+1)
+            # plt.xlabel(f"eps = {eps}")
+            # plt.scatter(x, y, s=4, c=l_)
+
+    # def compare_dbscan_kmeans():
+        # l1 = DBSCAN().fit(frame).labels_
+        # l2 = KMeans().fit(frame).labels_
+        # plt.subplot(121)
+        # plt.xlabel("DBSCAN")
+        # plt.scatter(x, y, s=4, c=l1)
+
+        # plt.subplot(122)
+        # plt.xlabel("KMeans")
+        # plt.scatter(x, y, s=4, c=l2)
+
+    # # dbscan_for_4_eps([0.05, 0.1, 0.5, 1])
+    # compare_dbscan_kmeans()
+    # plt.show()
+    # return
+
+    frame_target = 1
+    for frame_cnt, frame in enumerate(parser.generator()):
+        frame = filter_bound(frame, [-10., 6.], [-4., 5.], [-3., 3])
+        x, y = frame[:, 0], frame[:, 1]
+
+        labels = mtt.run(frame[:, [0, 1]])
+
+        if frame_cnt < frame_target:
+            continue
+        frame_target = int(input(
+            f'which next frame you want to go(current: {frame_cnt})?'))
+
+        plt.xlabel(f"frame_cnt = {frame_cnt}")
+        plt.scatter(x, y, s=4, c=labels)
+
+        # for i, track in enumerate(mtt.tracks):
+            # x_ = [hist.x_ for hist in track.hists]
+            # y_ = [hist.y_ for hist in track.hists]
+            # if x_ != [] and y_ != []:
+                # plt.scatter(x_, y_, marker='x')
+                # plt.text(x_[-1], y_[-1], str(id(track))[-4:])
+
+        plt.show()
+
+    return
+
     if args.use_serialized_frame:
         for frame in load_frame():
             analyze_frame(frame, args)
@@ -295,6 +355,23 @@ def test(args):
             else:
                 i += 1
                 break
+
+
+def fake_image_for_my_senior():
+    parser = pointcloud_parser.Parser('rs', '')
+    for i, frame in enumerate(parser.generator()):
+        if i <= 50:
+            continue
+        # frame = filter_bound(frame, )
+        frame = frame[:, [0, 1]]
+        x, y = frame[:, 0], frame[:, 1]
+
+        l_ = DBSCAN().fit(frame).labels_
+        plt.scatter(x, y, s=4, c=l_)
+
+        image, x_d, y_d = grid_image(frame, 0.1, BBox())
+        """x_d, y_d : np.array, gridded coordinates"""
+        # I just heard that I don't need to write this.
 
 
 if __name__ == "__main__":

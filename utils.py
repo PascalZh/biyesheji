@@ -10,6 +10,7 @@ import matplotlib.patches as patches
 from matplotlib.widgets import Button, TextBox, RectangleSelector
 from matplotlib import cm
 from mpl_toolkits.mplot3d import Axes3D
+from mayavi import mlab
 
 def enclosure_run_time():
     run_time = dict()
@@ -33,9 +34,9 @@ def enclosure_run_time():
         nonlocal run_time
         print("================SHOW RUN TIME=================")
         for f in run_time.keys():
-            t = run_time[f][0]; n = run_time[f][1]
+            t, n = run_time[f][0], run_time[f][1]
             info = "function \033[36m%s\033[0m \truns for \033[34m%.3fms\033[0m, \
-    \033[32m%.5fμs\033[0m a time, %s times."  % (f, t*1000, t*1e6/n, n)
+    \033[32m%.5fμs\033[0m a time, %s times." % (f, t*1000, t*1e6/n, n)
             print(info)
 
     @contextmanager
@@ -67,6 +68,7 @@ def load_frame():
     if len(files) != 1:
         raise
     n = len(files[0])
+
     def generator(n):
         i = 0
         while True:
@@ -76,6 +78,7 @@ def load_frame():
             else:
                 break
     return generator(n)
+
 
 def save_frame(x, i):
     filename = "./serial/frames"
@@ -95,16 +98,18 @@ def save_folders(folder, subfolder, x):
         n = reduce(max, [int(file_.split('.')[0]) for file_ in files])
     np.save(filename + '/%05d.npy' % (n + 1), x)
 
+
 def load_folders(folder, subfolder):
     filename = folder + '/' + subfolder
     files = list(os.walk(filename))[0][2]
     return [np.load(filename + '/' + f) for f in files]
 
+
 def print_hex(bytes_):
-    l = [hex(int(i)) for i in bytes_]
-    print(" ".join(l[:84]))
+    lst = [hex(int(i)) for i in bytes_]
+    print(" ".join(lst[:84]))
     for i in range(12):
-        print(" ".join(l[84+i*100:84+i*100+100]))
+        print(" ".join(lst[84+i*100:84+i*100+100]))
 
 
 @record_run_time
@@ -114,19 +119,22 @@ def append_0(a, b):
     else:
         return np.append(a, b, axis=0)
 
+
 def my_imshow(im):
     plt.imshow(im.transpose(1, 0, 2), origin='lower')
+
 
 def plot3d(f):
     fig = plt.figure("point clouds view")
     ax = fig.add_subplot(111, projection='3d')
     plt.xlabel('x/m')
     plt.ylabel('y/m')
-    ax.scatter(f[:,0], f[:,1], f[:,2], s=2, c=f[:,3])
+    ax.scatter(f[:, 0], f[:, 1], f[:, 2], s=2, c=f[:, 3])
     fig.show()
     # mlab.points3d(f[:,0], f[:,1], f[:,2], f[:,3], mode='point', colormap='cool')
     # mlab.axes(xlabel='x', ylabel='y', zlabel='z')
     # mlab.show()
+
 
 def explore_images(images_tuple, draw_type, rows, cols, mn, mx, res):
     extent = res * np.array([mn[0], mx[0], mn[1], mx[1]])
@@ -139,7 +147,7 @@ def explore_images(images_tuple, draw_type, rows, cols, mn, mx, res):
     fig = plt.figure("projected images")
     fig.tight_layout()
     plt.subplots_adjust(left=0.05, bottom=0.1, top=0.99, right=0.95,
-            wspace=0.01, hspace=0.01)
+                        wspace=0.01, hspace=0.01)
 
     axes_image = []
     axes = []
@@ -149,7 +157,7 @@ def explore_images(images_tuple, draw_type, rows, cols, mn, mx, res):
             sharex, sharey = axes[0], axes[0]
         else:
             sharex, sharey = None, None
-        ax = fig.add_subplot(rows,cols,j+1, sharex=sharex, sharey=sharey)
+        ax = fig.add_subplot(rows, cols, j+1, sharex=sharex, sharey=sharey)
         axes.append(ax)
         plt.xlabel("x/m", fontsize=9)
         plt.ylabel("y/m", fontsize=9)
@@ -165,10 +173,10 @@ def explore_images(images_tuple, draw_type, rows, cols, mn, mx, res):
             a = plt.imshow(img, extent=extent, cmap='gray', origin='lower')
             axes_image += [a]
         elif draw_type[j] == 1:
-            x = images_tuple[j][0][:,0]
-            y = images_tuple[j][0][:,1]
+            x = images_tuple[j][0][:, 0]
+            y = images_tuple[j][0][:, 1]
             ax.set_aspect((ylim[1]-ylim[0]) / (xlim[1]-xlim[0]) /
-                    ax.get_data_ratio())
+                          ax.get_data_ratio())
             plt.plot(x, y, 'b,')
             axes_image += [None]
 
@@ -192,8 +200,8 @@ def explore_images(images_tuple, draw_type, rows, cols, mn, mx, res):
                     axes_image[j].set_data(img)
                     plt.draw()
                 elif draw_type[j] == 1:
-                    x = images_tuple[j][i][:,0]
-                    y = images_tuple[j][i][:,1]
+                    x = images_tuple[j][i][:, 0]
+                    y = images_tuple[j][i][:, 1]
                     plt.subplot(axes[j])
                     plt.cla()
                     plt.xlim(xlim)
@@ -224,10 +232,13 @@ def explore_images(images_tuple, draw_type, rows, cols, mn, mx, res):
 
     # explain: region_selected = [xmin, ymin, xmax, ymax]
     region_selected = np.array([.0, .0, .0, .0])
+
     def onselect(eclick, erelease):
         "eclick and erelease are matplotlib events at press and release."
-        print('left bottom position: (%f, %f)' % (eclick.xdata, eclick.ydata))
-        print('right bottom position: (%f, %f)' % (erelease.xdata, erelease.ydata))
+        print('left bottom position: (%f, %f)' %
+              (eclick.xdata, eclick.ydata))
+        print('right bottom position: (%f, %f)' %
+              (erelease.xdata, erelease.ydata))
         print('used button  : ', eclick.button)
         region_selected[0], region_selected[1] = eclick.xdata, eclick.ydata
         region_selected[2], region_selected[3] = erelease.xdata, erelease.ydata
